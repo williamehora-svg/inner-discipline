@@ -336,7 +336,7 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size
 <!-- FIREBASE -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -359,6 +359,7 @@ let saveTimeout = null;
 document.getElementById('google-signin-btn').addEventListener('click', async () => {
   document.getElementById('auth-status').textContent = 'Connexion en cours...';
   try {
+    await setPersistence(auth, browserLocalPersistence);
     const provider = new GoogleAuthProvider();
     await signInWithPopup(auth, provider);
   } catch(e) {
@@ -368,15 +369,35 @@ document.getElementById('google-signin-btn').addEventListener('click', async () 
 
 document.getElementById('sign-out-btn').addEventListener('click', () => signOut(auth));
 
-onAuthStateChanged(auth, async (user) => {
+onAuthStateChanged(auth, (user) => {
   if(user) {
     uid = user.uid;
     document.getElementById('auth-screen').classList.add('hide');
     document.getElementById('wrap').style.display = 'block';
     document.getElementById('user-avatar').src = user.photoURL || '';
     document.getElementById('user-name').textContent = user.displayName || user.email;
-    await loadFromFirebase();
+    // Démarrer immédiatement sans attendre Firebase
     init();
+    // Charger Firebase en arrière-plan
+    setSyncState('syncing');
+    getDoc(doc(db, 'discipline', uid)).then(snap => {
+      if(snap.exists()) {
+        const data = snap.data();
+        // Fusionner prudemment : ne pas écraser startDate si déjà défini localement
+        const localStart = S.startDate;
+        Object.assign(S, data);
+        // Garder la plus ancienne startDate pour ne pas perdre les jours
+        if(localStart && (!S.startDate || new Date(localStart) < new Date(S.startDate))) {
+          S.startDate = localStart;
+        }
+      }
+      setSyncState('ok');
+      // Re-render avec les données Firebase
+      init();
+    }).catch(e => {
+      setSyncState('err');
+      console.log('Firebase error:', e.message);
+    });
   } else {
     uid = null;
     document.getElementById('auth-screen').classList.remove('hide');
@@ -461,12 +482,14 @@ function toggleReading(){
   }else{
     readingTimer.running=true;
     var b=document.getElementById('rt-btn');if(b)b.textContent='Pause';
+    readingTimer.startTs=Date.now();
     readingTimer.interval=setInterval(function(){
-      readingTimer.remaining--;
-      var m=Math.floor(readingTimer.remaining/60),s=readingTimer.remaining%60;
+      var elapsed=Date.now()-readingTimer.startTs;
+      var rem=Math.max(0,Math.round((300000-elapsed)/1000));
+      var m=Math.floor(rem/60),s=rem%60;
       var d=document.getElementById('rt-disp');if(d)d.textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-      var f=document.getElementById('rt-fill');if(f)f.style.width=Math.round((1-readingTimer.remaining/300)*100)+'%';
-      if(readingTimer.remaining<=0){
+      var f=document.getElementById('rt-fill');if(f)f.style.width=Math.round(elapsed/300000*100)+'%';
+      if(elapsed>=300000){
         clearInterval(readingTimer.interval);readingTimer.running=false;
         if(!S.readingDone)S.readingDone={};
         S.readingDone[today()]=true;S.xp+=20;persist();
@@ -554,12 +577,23 @@ document.getElementById('j-search').addEventListener('input',function(){
 
 // ── INIT
 function init(){
-  if(!S.startDate){S.startDate=new Date().toISOString();}
+  // Initialiser startDate une seule fois - jamais réinitialiser
+  if(!S.startDate){
+    S.startDate=new Date().toISOString();
+    persist();
+  }
   var td=today();
   if(S.lastDay!==td){
-    if(S.lastDay){var y=new Date(S.lastDay);y.setDate(y.getDate()+1);S.streak=y.toDateString()===td?(S.streak||0)+1:1;}
-    else S.streak=1;
-    S.checkins={};S.lastDay=td;persist();
+    if(S.lastDay){
+      var y=new Date(S.lastDay);
+      y.setDate(y.getDate()+1);
+      S.streak=y.toDateString()===td?(S.streak||0)+1:1;
+    } else {
+      S.streak=1;
+    }
+    S.checkins={};
+    S.lastDay=td;
+    persist();
   }
   var now=new Date(),h=now.getHours();
   document.getElementById('greeting').textContent=(h<12?'Bon matin':h<18?'Bon après-midi':'Bonsoir')+', William';
@@ -662,13 +696,15 @@ function startMed(id){
   if(circ){circ.textContent='🧘';circ.className='bcirc hold';}
   if(ph)ph.textContent='Méditation en cours…';
   playBowl('end');
-  var rem=300;
+  var startTs=Date.now(), totalMs=300000;
   medTimers[id]=setInterval(function(){
-    rem--;var m=Math.floor(rem/60),s=rem%60;
+    var elapsed=Date.now()-startTs;
+    var rem=Math.max(0,Math.round((totalMs-elapsed)/1000));
+    var m=Math.floor(rem/60),s=rem%60;
     var td=document.getElementById('mt-'+id),tf=document.getElementById('mf-'+id);
     if(td)td.textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-    if(tf)tf.style.width=Math.round((1-rem/300)*100)+'%';
-    if(rem<=0){clearInterval(medTimers[id]);if(circ){circ.className='bcirc inhale';circ.textContent='✓';}if(ph)ph.textContent='Terminé';playBowl('end');unlockCI(id);}
+    if(tf)tf.style.width=Math.round(elapsed/totalMs*100)+'%';
+    if(elapsed>=totalMs){clearInterval(medTimers[id]);if(circ){circ.className='bcirc inhale';circ.textContent='✓';}if(ph)ph.textContent='Terminé';playBowl('end');unlockCI(id);}
   },1000);
 }
 
@@ -713,11 +749,14 @@ function toggleSport(id){
   if(sportTimer.running){clearInterval(sportTimer.interval);sportTimer.running=false;var t=document.getElementById('tbtn-'+id);if(t)t.textContent='Reprendre';}
   else{
     sportTimer.running=true;var t=document.getElementById('tbtn-'+id);if(t)t.textContent='Pause';
+    sportTimer.startTs=Date.now();
     sportTimer.interval=setInterval(function(){
-      sportTimer.remaining--;var m=Math.floor(sportTimer.remaining/60),s=sportTimer.remaining%60;
+      var elapsed=Date.now()-sportTimer.startTs;
+      var rem=Math.max(0,Math.round((sportTimer.total*1000-elapsed)/1000));
+      var m=Math.floor(rem/60),s=rem%60;
       var tdEl=document.getElementById('td-'+id);if(tdEl)tdEl.textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-      var tp=document.getElementById('tp-'+id);if(tp)tp.style.width=Math.round((1-sportTimer.remaining/sportTimer.total)*100)+'%';
-      if(sportTimer.remaining<=0){clearInterval(sportTimer.interval);sportTimer.running=false;var t=document.getElementById('tbtn-'+id);if(t)t.textContent='Terminé';}
+      var tp=document.getElementById('tp-'+id);if(tp)tp.style.width=Math.round(elapsed/(sportTimer.total*1000)*100)+'%';
+      if(rem<=0){clearInterval(sportTimer.interval);sportTimer.running=false;var t=document.getElementById('tbtn-'+id);if(t)t.textContent='Terminé';}
     },1000);
   }
 }
