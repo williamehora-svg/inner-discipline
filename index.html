@@ -369,50 +369,23 @@ document.getElementById('google-signin-btn').addEventListener('click', async () 
 
 document.getElementById('sign-out-btn').addEventListener('click', () => signOut(auth));
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, function(user) {
   if(user) {
     uid = user.uid;
     document.getElementById('auth-screen').classList.add('hide');
     document.getElementById('wrap').style.display = 'block';
     document.getElementById('user-avatar').src = user.photoURL || '';
     document.getElementById('user-name').textContent = user.displayName || user.email;
-    // Démarrer immédiatement sans attendre Firebase
     init();
-    // Charger Firebase en arrière-plan
     setSyncState('syncing');
-    getDoc(doc(db, 'discipline', uid)).then(snap => {
+    getDoc(doc(db, 'discipline', uid)).then(function(snap) {
       if(snap.exists()) {
-        const data = snap.data();
-        // Fusionner intelligemment : ne jamais écraser avec des valeurs vides
-        // Pour chaque clé, garder la valeur locale si Firebase renvoie vide/null
-        const merged = {};
-        // Prendre toutes les clés de Firebase en priorité
-        Object.keys(data).forEach(k => {
-          const fbVal = data[k];
-          const localVal = S[k];
-          // Garder Firebase sauf si la valeur Firebase est vide et locale non-vide
-          if (fbVal === null || fbVal === undefined) {
-            merged[k] = localVal;
-          } else if (Array.isArray(fbVal) && fbVal.length === 0 && Array.isArray(localVal) && localVal.length > 0) {
-            merged[k] = localVal; // garder tableau local si Firebase est vide
-          } else if (typeof fbVal === 'object' && !Array.isArray(fbVal) && Object.keys(fbVal).length === 0 && typeof localVal === 'object' && Object.keys(localVal||{}).length > 0) {
-            merged[k] = localVal; // garder objet local si Firebase est vide
-          } else {
-            merged[k] = fbVal;
-          }
-        });
-        Object.assign(S, merged);
-        // Garder la plus ancienne startDate
-        if(data.startDate && S.startDate) {
-          S.startDate = new Date(data.startDate) < new Date(S.startDate) ? data.startDate : S.startDate;
-        }
+        mergeDiscipline(snap.data());
       }
       setSyncState('ok');
-      // Re-render avec les données Firebase
       init();
-    }).catch(e => {
+    }).catch(function(e) {
       setSyncState('err');
-      console.log('Firebase error:', e.message);
     });
   } else {
     uid = null;
@@ -421,22 +394,7 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-// ── FIRESTORE
-async function loadFromFirebase() {
-  if(!uid) return;
-  setSyncState('syncing');
-  try {
-    const snap = await getDoc(doc(db, 'discipline', uid));
-    if(snap.exists()) {
-      const data = snap.data();
-      Object.assign(S, data);
-    }
-    setSyncState('ok');
-  } catch(e) {
-    setSyncState('err');
-    showToast('Erreur de chargement');
-  }
-}
+
 
 function saveToFirebase() {
   if(!uid) return;
@@ -520,6 +478,38 @@ function toggleReading(){
 // ══════════════════════════════
 var LEVELS=[{name:'Initié',min:0},{name:"L'Observateur",min:100},{name:'Le Stratège',min:250},{name:"L'Homme Libre",min:500},{name:'Tommy Shelby',min:1000}];
 var S={checkins:{},defis:{},entries:[],xp:0,streak:0,lastDay:'',startDate:null,humeurs:{},pensees:{},victories:{},weeklyReviews:{},readingDone:{}};
+
+// ── FUSION FIREBASE INTELLIGENTE ──
+function mergeDiscipline(data) {
+  Object.keys(data).forEach(function(k) {
+    var fbVal = data[k];
+    var localVal = S[k];
+    if (fbVal === null || fbVal === undefined) {
+      return; // garder local
+    } else if (Array.isArray(fbVal) && fbVal.length === 0 && Array.isArray(localVal) && localVal.length > 0) {
+      return; // garder tableau local non-vide
+    } else if (!Array.isArray(fbVal) && typeof fbVal === 'object' && Object.keys(fbVal).length === 0 && typeof localVal === 'object' && localVal !== null && Object.keys(localVal).length > 0) {
+      return; // garder objet local non-vide
+    } else {
+      S[k] = fbVal;
+    }
+  });
+  // Garder la plus ancienne startDate (ne jamais reculer le compteur de jours)
+  if (data.startDate && S.startDate) {
+    if (new Date(data.startDate) < new Date(S.startDate)) {
+      S.startDate = data.startDate;
+    }
+  }
+  // Dédupliquer les entrées journal par date
+  if (S.entries && S.entries.length > 1) {
+    var seenDates = {};
+    S.entries = S.entries.filter(function(e) {
+      if (seenDates[e.date]) return false;
+      seenDates[e.date] = true;
+      return true;
+    });
+  }
+}
 var breathStates={},sportMode=null,sportTimer={running:false,remaining:0,interval:null,total:0},medTimers={};
 var curCtx='social',curRefIdx=0;
 
