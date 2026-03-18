@@ -73,7 +73,7 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size
 
 /* CHECK-IN CARDS */
 .ci-card{background:var(--bg2);border:1px solid var(--border);margin:0 22px 10px;overflow:hidden}
-.ci-hd{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer}
+.ci-hd{display:flex;align-items:center;gap:12px;padding:14px 16px}
 .ci-ico{width:38px;height:38px;border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--gold3)}
 .ci-ico.done{border-color:var(--gold);background:var(--gold4);color:var(--gold)}
 .ci-meta{flex:1}
@@ -81,7 +81,7 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size
 .ci-meas{font-size:11px;color:var(--gold3);letter-spacing:2px;margin-top:3px;text-transform:uppercase}
 .ci-chk{width:22px;height:22px;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;color:var(--gold)}
 .ci-chk.done{border-color:var(--gold);background:var(--gold4)}
-.ci-body{display:none;border-top:1px solid var(--border);padding:16px}
+.ci-body{display:block;border-top:1px solid var(--border);padding:16px}
 .ci-body.on{display:block}
 .ci-instr{font-size:14px;color:var(--text2);line-height:1.85;font-style:italic;margin-bottom:14px}
 .ci-val{width:100%;background:none;border:1px solid var(--border2);color:var(--text3);font-family:var(--fb);font-size:14px;letter-spacing:1px;padding:11px;cursor:not-allowed;transition:all .2s;text-transform:uppercase}
@@ -936,7 +936,7 @@ function renderMatinCheckins(){
       +'<div class="ci-chk'+(done?' done':'')+'">'+( done?'✓':'')+'</div></div>'
       +'<div class="ci-body" id="cib-'+item.id+'"><div class="ci-instr">'+item.instruction+'</div>'+renderWidget(item)
       +'<button class="ci-val'+(done?' done':'')+'" id="cvb-'+item.id+'">'+(done?"Accompli aujourd'hui ✓":'Valider cet exercice')+'</button></div>';
-    div.querySelector('.ci-hd').addEventListener('click',function(){document.getElementById('cib-'+item.id).classList.toggle('on');});
+    // pas de toggle - corps toujours visible
     c.appendChild(div);
     if(!done){
       var btn=div.querySelector('#cvb-'+item.id);
