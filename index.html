@@ -784,6 +784,73 @@ function init(){
   else if(h>=12){document.querySelectorAll('.tab')[1].click();}
   renderHome();renderJournal();renderSoirBlock();
 }
+
+
+function renderHome(){renderHumeur();renderReading();renderMatinCheckins();renderJourneePanel();renderSoirVictoire();}
+
+// HUMEUR
+function renderHumeur(){
+  var td=today(),done=S.humeurs[td];
+  var el=document.getElementById('humeur-block');
+  if(done){var L=['','😔 Bas','😐 Moyen','🙂 Ok','😊 Bien','🔥 Top'];el.innerHTML='<div style="font-size:15px;color:var(--gold2);font-style:italic;text-align:center;padding:8px 0;font-family:var(--ft);letter-spacing:1px">'+L[done]+'</div>';}
+  else{
+    el.innerHTML='<div style="font-size:13px;color:var(--text2);font-style:italic;margin-bottom:12px">Évalue ton état intérieur ce matin</div><div class="hrow" id="hrow"></div>';
+    var hr=document.getElementById('hrow');
+    [[1,'😔','Bas'],[2,'😐','Moyen'],[3,'🙂','Ok'],[4,'😊','Bien'],[5,'🔥','Top']].forEach(function(x){
+      var btn=document.createElement('button');btn.className='hbtn';btn.innerHTML=x[1]+'<span>'+x[2]+'</span>';
+      btn.addEventListener('click',function(){S.humeurs[td]=x[0];persist();renderHumeur();renderMoodGraph();});
+      hr.appendChild(btn);
+    });
+  }
+}
+
+// LECTURE
+var readingTimer={running:false,remaining:300,startTs:0,interval:null};
+function renderReading(){
+  if(typeof READINGS==='undefined')return;
+  var week=getCurrentWeek();
+  var r=READINGS.find(function(x){return x.week===week;})||READINGS[0];
+  var done=S.readingDone&&S.readingDone[today()];
+  readingTimer={running:false,remaining:300,startTs:0,interval:null};
+  var el=document.getElementById('reading-container');
+  if(!el)return;
+  el.innerHTML='<div class="reading-card">'
+    +'<div class="reading-source">'+r.source+'</div>'
+    +'<div class="reading-title">'+r.title+'</div>'
+    +'<div class="reading-text">'+r.text+'</div>'
+    +'<div class="reading-timer-row">'
+    +'<div class="reading-timer-disp" id="rt-disp">05:00</div>'
+    +'<div class="reading-prog"><div class="reading-prog-fill" id="rt-fill" style="width:'+(done?100:0)+'%"></div></div>'
+    +(done?'<button class="reading-btn" style="color:var(--gold3);border-color:var(--gold3)">Lu ✓</button>':'<button class="reading-btn" id="rt-btn">Démarrer</button>')
+    +'</div></div>';
+  if(!done){var btn=document.getElementById('rt-btn');if(btn)btn.addEventListener('click',toggleReading);}
+}
+function toggleReading(){
+  if(readingTimer.running){
+    clearInterval(readingTimer.interval);readingTimer.running=false;
+    readingTimer.remaining=Math.max(0,300-Math.round((Date.now()-readingTimer.startTs)/1000));
+    var b=document.getElementById('rt-btn');if(b)b.textContent='Reprendre';
+  }else{
+    readingTimer.running=true;readingTimer.startTs=Date.now()-(300-readingTimer.remaining)*1000;
+    var b=document.getElementById('rt-btn');if(b)b.textContent='Pause';
+    readingTimer.interval=setInterval(function(){
+      var elapsed=Date.now()-readingTimer.startTs;
+      var rem=Math.max(0,Math.round((300000-elapsed)/1000));
+      var m=Math.floor(rem/60),s=rem%60;
+      var d=document.getElementById('rt-disp');if(d)d.textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+      var f=document.getElementById('rt-fill');if(f)f.style.width=Math.round(elapsed/300000*100)+'%';
+      if(elapsed>=300000){
+        clearInterval(readingTimer.interval);readingTimer.running=false;
+        if(!S.readingDone)S.readingDone={};
+        S.readingDone[today()]=true;S.xp+=20;persist();
+        playBowl('end');renderReading();
+      }
+    },1000);
+  }
+}
+
+// CHECK-INS MATIN
+
 init();
 
 function renderHome(){renderHumeur();renderReading();renderMatinCheckins();renderJourneePanel();renderSoirVictoire();}
@@ -1167,6 +1234,8 @@ async function sendCoach(){
   }catch(e){document.getElementById(tid).remove();msgs.innerHTML+='<div class="msg-coach">Connexion interrompue.</div>';}
   msgs.scrollTop=msgs.scrollHeight;
 }
+
+init();
 </script>
 </body>
 </html>
