@@ -383,12 +383,28 @@ onAuthStateChanged(auth, (user) => {
     getDoc(doc(db, 'discipline', uid)).then(snap => {
       if(snap.exists()) {
         const data = snap.data();
-        // Fusionner prudemment : ne pas écraser startDate si déjà défini localement
-        const localStart = S.startDate;
-        Object.assign(S, data);
-        // Garder la plus ancienne startDate pour ne pas perdre les jours
-        if(localStart && (!S.startDate || new Date(localStart) < new Date(S.startDate))) {
-          S.startDate = localStart;
+        // Fusionner intelligemment : ne jamais écraser avec des valeurs vides
+        // Pour chaque clé, garder la valeur locale si Firebase renvoie vide/null
+        const merged = {};
+        // Prendre toutes les clés de Firebase en priorité
+        Object.keys(data).forEach(k => {
+          const fbVal = data[k];
+          const localVal = S[k];
+          // Garder Firebase sauf si la valeur Firebase est vide et locale non-vide
+          if (fbVal === null || fbVal === undefined) {
+            merged[k] = localVal;
+          } else if (Array.isArray(fbVal) && fbVal.length === 0 && Array.isArray(localVal) && localVal.length > 0) {
+            merged[k] = localVal; // garder tableau local si Firebase est vide
+          } else if (typeof fbVal === 'object' && !Array.isArray(fbVal) && Object.keys(fbVal).length === 0 && typeof localVal === 'object' && Object.keys(localVal||{}).length > 0) {
+            merged[k] = localVal; // garder objet local si Firebase est vide
+          } else {
+            merged[k] = fbVal;
+          }
+        });
+        Object.assign(S, merged);
+        // Garder la plus ancienne startDate
+        if(data.startDate && S.startDate) {
+          S.startDate = new Date(data.startDate) < new Date(S.startDate) ? data.startDate : S.startDate;
         }
       }
       setSyncState('ok');
